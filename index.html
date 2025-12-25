@@ -1,488 +1,520 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Platform Adventure</title>
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            overflow: hidden;
-            background: #5c94fc;
-            font-family: 'Arial', sans-serif;
-        }
-
-        #gameCanvas {
-            display: block;
-            background: #5c94fc;
-            image-rendering: pixelated;
-        }
-
-        #ui {
-            position: absolute;
-            top: 20px;
-            left: 20px;
-            color: white;
-            font-size: 24px;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            z-index: 10;
-        }
-
-        #gameOver, #victory {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            background: rgba(0, 0, 0, 0.8);
-            color: white;
-            padding: 40px;
-            border-radius: 10px;
-            text-align: center;
-            display: none;
-            z-index: 20;
-        }
-
-        #gameOver h1, #victory h1 {
-            font-size: 48px;
-            margin-bottom: 20px;
-        }
-
-        #gameOver p, #victory p {
-            font-size: 24px;
-            margin-bottom: 20px;
-        }
-
-        button {
-            font-size: 20px;
-            padding: 10px 30px;
-            background: #4CAF50;
-            color: white;
-            border: none;
-            border-radius: 5px;
-            cursor: pointer;
-        }
-
-        button:hover {
-            background: #45a049;
-        }
-
-        #instructions {
-            position: absolute;
-            bottom: 20px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: white;
-            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
-            font-size: 16px;
-            text-align: center;
-        }
-    </style>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HTML Canvas Platformer</title>
+<style>
+  :root {
+    --bg: #1b1f2a;
+    --ui: #ffffff;
+    --accent: #2ecc71;
+    --danger: #e74c3c;
+    --coin: #f1c40f;
+    --sky: linear-gradient(#7ec0ee, #bde3ff);
+    --ground: #8b5a2b;
+    --platform: #654321;
+  }
+  html, body {
+    height: 100%;
+    margin: 0;
+    background: var(--bg);
+    color: var(--ui);
+    font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Noto Sans", "Liberation Sans", sans-serif;
+  }
+  .wrap {
+    display: grid;
+    place-items: center;
+    height: 100%;
+    gap: 12px;
+    padding: 12px;
+  }
+  canvas {
+    background: var(--sky);
+    border: 2px solid #10131a;
+    border-radius: 8px;
+    image-rendering: crisp-edges;
+    image-rendering: pixelated;
+  }
+  .hud {
+    max-width: 800px;
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    font-weight: 600;
+  }
+  .hud .left, .hud .right {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+  }
+  .pill {
+    padding: 6px 10px;
+    border: 1px solid #263042;
+    border-radius: 999px;
+    background: #0f1320;
+    font-size: 14px;
+  }
+  .kbd {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+    background: #0b0f18;
+    border: 1px solid #1f2a40;
+    padding: 2px 6px;
+    border-radius: 6px;
+  }
+  .footer {
+    opacity: 0.8;
+    font-size: 13px;
+  }
+</style>
 </head>
 <body>
-    <canvas id="gameCanvas"></canvas>
-    
-    <div id="ui">
-        <div>Score: <span id="score">0</span></div>
-        <div>Lives: <span id="lives">3</span></div>
+  <div class="wrap">
+    <div class="hud">
+      <div class="left">
+        <span class="pill">Move: <span class="kbd">← / →</span> or <span class="kbd">A / D</span></span>
+        <span class="pill">Jump: <span class="kbd">Space</span> / <span class="kbd">W</span> / <span class="kbd">↑</span></span>
+        <span class="pill">Reset: <span class="kbd">R</span></span>
+      </div>
+      <div class="right">
+        <span id="coins" class="pill">Coins: 0</span>
+        <span id="status" class="pill">Ready</span>
+      </div>
     </div>
+    <canvas id="game" width="960" height="540" aria-label="Platformer game"></canvas>
+    <div class="footer">Reach the flag. Collect all coins for a perfect run.</div>
+  </div>
 
-    <div id="gameOver">
-        <h1>Game Over!</h1>
-        <p>Final Score: <span id="finalScore">0</span></p>
-        <button onclick="resetGame()">Try Again</button>
-    </div>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
 
-    <div id="victory">
-        <h1>Victory!</h1>
-        <p>You completed the level!</p>
-        <p>Score: <span id="victoryScore">0</span></p>
-        <button onclick="resetGame()">Play Again</button>
-    </div>
+  // World and camera
+  const TILE = 64;
+  const WORLD = {
+    width: 64 * TILE,  // 4096px
+    height: canvas.height,
+    gravity: 2000,     // px/s^2
+    airFriction: 0.92,
+    groundFriction: 0.8,
+    maxRunSpeed: 380,
+    accel: 1800,
+    jumpVel: 820,
+    maxJumpHoldMs: 150,
+  };
 
-    <div id="instructions">
-        Arrow Keys or WASD to Move | Space to Jump | Collect coins and reach the flag!
-    </div>
+  const camera = { x: 0, y: 0, lerp: 0.16 };
 
-    <script>
-        const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+  // Input
+  const keys = new Set();
+  let jumpHeld = false;
 
-        canvas.width = 800;
-        canvas.height = 600;
+  // Entities
+  const player = {
+    x: 80, y: 0, w: 42, h: 56,
+    vx: 0, vy: 0,
+    onGround: false,
+    facing: 1,
+    alive: true,
+    coins: 0,
+  };
 
-        // Game state
-        let gameRunning = true;
-        let score = 0;
-        let lives = 3;
-        let camera = { x: 0, y: 0 };
+  const platforms = [];
+  const coins = [];
+  const enemies = [];
+  let flag = { x: WORLD.width - TILE * 1.5, y: 0, w: 24, h: TILE * 3 };
 
-        // Player
-        const player = {
-            x: 100,
-            y: 400,
-            width: 32,
-            height: 32,
-            vx: 0,
-            vy: 0,
-            speed: 5,
-            jumpPower: 12,
-            grounded: false,
-            color: '#ff0000'
-        };
+  // Level generation
+  function addPlatform(x, y, w, h=TILE/2) { platforms.push({ x, y, w, h }); }
+  function addEnemy(x, y, w=44, h=40, range=TILE*3, speed=120) {
+    enemies.push({ x, y, w, h, baseX: x, range, dir: 1, speed, alive: true });
+  }
+  function addCoin(x, y, r=10) { coins.push({ x, y, r, taken: false, hover: Math.random()*Math.PI*2 }); }
 
-        // Physics
-        const gravity = 0.5;
-        const friction = 0.8;
+  function buildLevel() {
+    platforms.length = 0; coins.length = 0; enemies.length = 0;
 
-        // Level design
-        const platforms = [
-            // Ground
-            { x: 0, y: 550, width: 400, height: 50, color: '#8B4513' },
-            { x: 500, y: 550, width: 400, height: 50, color: '#8B4513' },
-            { x: 1000, y: 550, width: 400, height: 50, color: '#8B4513' },
-            { x: 1500, y: 550, width: 400, height: 50, color: '#8B4513' },
-            { x: 2000, y: 550, width: 800, height: 50, color: '#8B4513' },
-            
-            // Floating platforms
-            { x: 450, y: 450, width: 100, height: 20, color: '#228B22' },
-            { x: 650, y: 350, width: 100, height: 20, color: '#228B22' },
-            { x: 850, y: 450, width: 100, height: 20, color: '#228B22' },
-            { x: 1100, y: 400, width: 120, height: 20, color: '#228B22' },
-            { x: 1300, y: 350, width: 100, height: 20, color: '#228B22' },
-            { x: 1500, y: 300, width: 100, height: 20, color: '#228B22' },
-            { x: 1700, y: 400, width: 150, height: 20, color: '#228B22' },
-            { x: 1950, y: 450, width: 100, height: 20, color: '#228B22' },
-            { x: 2200, y: 350, width: 120, height: 20, color: '#228B22' },
-            { x: 2450, y: 450, width: 100, height: 20, color: '#228B22' }
-        ];
+    // Ground segments
+    for (let i = 0; i < WORLD.width; i += TILE * 4) {
+      addPlatform(i, canvas.height - TILE, TILE * 4, TILE);
+    }
 
-        // Coins
-        const coins = [
-            { x: 500, y: 400, width: 20, height: 20, collected: false },
-            { x: 700, y: 300, width: 20, height: 20, collected: false },
-            { x: 900, y: 400, width: 20, height: 20, collected: false },
-            { x: 1150, y: 350, width: 20, height: 20, collected: false },
-            { x: 1350, y: 300, width: 20, height: 20, collected: false },
-            { x: 1550, y: 250, width: 20, height: 20, collected: false },
-            { x: 1750, y: 350, width: 20, height: 20, collected: false },
-            { x: 2000, y: 400, width: 20, height: 20, collected: false },
-            { x: 2250, y: 300, width: 20, height: 20, collected: false },
-            { x: 2500, y: 400, width: 20, height: 20, collected: false }
-        ];
+    // Stairs and floating platforms
+    addPlatform(TILE*6, canvas.height - TILE*2, TILE*2);
+    addPlatform(TILE*8, canvas.height - TILE*3, TILE*2);
+    addPlatform(TILE*10, canvas.height - TILE*4, TILE*2);
 
-        // Enemies
-        const enemies = [
-            { x: 600, y: 520, width: 30, height: 30, vx: 2, range: 150, startX: 600 },
-            { x: 1100, y: 520, width: 30, height: 30, vx: 2, range: 200, startX: 1100 },
-            { x: 1700, y: 520, width: 30, height: 30, vx: 2, range: 180, startX: 1700 },
-            { x: 2200, y: 520, width: 30, height: 30, vx: 2, range: 150, startX: 2200 }
-        ];
+    addPlatform(TILE*14, canvas.height - TILE*3.5, TILE*3);
+    addPlatform(TILE*18.5, canvas.height - TILE*5, TILE*2);
+    addPlatform(TILE*21, canvas.height - TILE*4.5, TILE*2);
+    addPlatform(TILE*24, canvas.height - TILE*3.2, TILE*3);
 
-        // Goal flag
-        const goal = { x: 2700, y: 450, width: 40, height: 100 };
+    // Long run with gaps
+    addPlatform(TILE*28, canvas.height - TILE*2.2, TILE*2);
+    addPlatform(TILE*31.2, canvas.height - TILE*3.5, TILE*2);
+    addPlatform(TILE*34.5, canvas.height - TILE*2.2, TILE*2);
+    addPlatform(TILE*37.7, canvas.height - TILE*3.5, TILE*2);
 
-        // Input handling
-        const keys = {};
-        
-        document.addEventListener('keydown', (e) => {
-            keys[e.key] = true;
-            if (e.key === ' ' || e.key === 'ArrowUp' || e.key === 'w') {
-                e.preventDefault();
-                if (player.grounded) {
-                    player.vy = -player.jumpPower;
-                    player.grounded = false;
-                }
-            }
-        });
+    // Final approach
+    addPlatform(TILE*42, canvas.height - TILE*2.5, TILE*3);
+    addPlatform(TILE*46, canvas.height - TILE*3.2, TILE*2);
+    addPlatform(TILE*49, canvas.height - TILE*2.2, TILE*3);
 
-        document.addEventListener('keyup', (e) => {
-            keys[e.key] = false;
-        });
+    // Coins
+    [7, 8, 9, 14.5, 18.5, 21.2, 24.8, 31.6, 34.9, 38.1, 46.4, 50.2].forEach((t, i) => {
+      addCoin(TILE * t + (i % 2 === 0 ? 0 : 12), canvas.height - TILE*3 - (i % 3) * 22);
+    });
 
-        // Game loop
-        function update() {
-            if (!gameRunning) return;
+    // Enemies patrolling platforms
+    addEnemy(TILE*15, canvas.height - TILE*4.5 - 40);
+    addEnemy(TILE*25.2, canvas.height - TILE*3.2 - 40, 44, 40, TILE*2.5, 140);
+    addEnemy(TILE*33, canvas.height - TILE*3.5 - 40, 44, 40, TILE*2.8, 110);
+    addEnemy(TILE*48, canvas.height - TILE*3.2 - 40, 44, 40, TILE*2.2, 100);
+  }
 
-            // Player movement
-            if (keys['ArrowLeft'] || keys['a']) {
-                player.vx = -player.speed;
-            } else if (keys['ArrowRight'] || keys['d']) {
-                player.vx = player.speed;
-            } else {
-                player.vx *= friction;
-            }
+  function resetGame() {
+    player.x = 80;
+    player.y = 0;
+    player.vx = 0;
+    player.vy = 0;
+    player.onGround = false;
+    player.facing = 1;
+    player.alive = true;
+    player.coins = 0;
+    flag = { x: WORLD.width - TILE * 1.5, y: 0, w: 24, h: TILE * 3 };
+    buildLevel();
+    setStatus('Ready');
+    updateHud();
+  }
 
-            // Apply gravity
-            player.vy += gravity;
+  // Collision helpers
+  function rectsOverlap(a, b) {
+    return a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  }
+  function pointInRect(px, py, r) {
+    return px >= r.x && px <= r.x + r.w && py >= r.y && py <= r.y + r.h;
+  }
 
-            // Update position
-            player.x += player.vx;
-            player.y += player.vy;
+  // Rendering
+  function drawBackground(camX) {
+    // Parallax layers
+    ctx.fillStyle = '#bde3ff';
+    ctx.fillRect(camX - canvas.width, 0, WORLD.width + canvas.width, canvas.height);
 
-            // Check platform collisions
-            player.grounded = false;
-            platforms.forEach(platform => {
-                if (checkCollision(player, platform)) {
-                    // Top collision
-                    if (player.vy > 0 && player.y + player.height - player.vy <= platform.y) {
-                        player.y = platform.y - player.height;
-                        player.vy = 0;
-                        player.grounded = true;
-                    }
-                    // Bottom collision
-                    else if (player.vy < 0 && player.y - player.vy >= platform.y + platform.height) {
-                        player.y = platform.y + platform.height;
-                        player.vy = 0;
-                    }
-                    // Side collisions
-                    else if (player.vx > 0) {
-                        player.x = platform.x - player.width;
-                    } else if (player.vx < 0) {
-                        player.x = platform.x + platform.width;
-                    }
-                }
-            });
+    // Hills (parallax)
+    ctx.save();
+    ctx.translate(-camX * 0.2, 0);
+    ctx.fillStyle = '#a6d6f5';
+    for (let i = -2; i < WORLD.width / (TILE*3); i++) {
+      const hx = i * TILE * 3;
+      const hy = canvas.height - TILE * 1.2;
+      ctx.beginPath();
+      ctx.moveTo(hx, hy);
+      ctx.quadraticCurveTo(hx + TILE*1.5, hy - TILE, hx + TILE*3, hy);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
 
-            // Death by falling
-            if (player.y > canvas.height + 100) {
-                loseLife();
-            }
+    // Clouds
+    ctx.save();
+    ctx.translate(-camX * 0.4, 0);
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    for (let i = 0; i < 24; i++) {
+      const cx = i * TILE * 2.5 + (i%3)*20;
+      const cy = 60 + (i%5)*18;
+      ctx.beginPath();
+      ctx.arc(cx, cy, 16, 0, Math.PI*2);
+      ctx.arc(cx+22, cy+4, 18, 0, Math.PI*2);
+      ctx.arc(cx+44, cy, 16, 0, Math.PI*2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
 
-            // Collect coins
-            coins.forEach(coin => {
-                if (!coin.collected && checkCollision(player, coin)) {
-                    coin.collected = true;
-                    score += 100;
-                    updateScore();
-                }
-            });
+  function drawPlatforms() {
+    ctx.fillStyle = '#5a3a1f';
+    platforms.forEach(p => {
+      // top surface
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // bevel
+      ctx.fillStyle = '#734828';
+      ctx.fillRect(p.x, p.y, p.w, 6);
+      ctx.fillStyle = '#5a3a1f';
+    });
 
-            // Update enemies
-            enemies.forEach(enemy => {
-                enemy.x += enemy.vx;
-                
-                // Bounce enemies within their range
-                if (enemy.x > enemy.startX + enemy.range || enemy.x < enemy.startX) {
-                    enemy.vx *= -1;
-                }
+    // Ground grass
+    ctx.fillStyle = '#2ecc71';
+    platforms.forEach(p => {
+      ctx.fillRect(p.x, p.y - 4, p.w, 4);
+    });
+  }
 
-                // Check collision with player
-                if (checkCollision(player, enemy)) {
-                    // Jump on enemy
-                    if (player.vy > 0 && player.y + player.height - player.vy <= enemy.y + 10) {
-                        player.vy = -8;
-                        enemy.x = -1000; // Remove enemy
-                        score += 200;
-                        updateScore();
-                    } else {
-                        loseLife();
-                    }
-                }
-            });
+  function drawPlayer() {
+    // Body
+    ctx.fillStyle = '#1f6feb';
+    ctx.fillRect(player.x, player.y, player.w, player.h);
+    // Face
+    ctx.fillStyle = '#ffe0b2';
+    ctx.fillRect(player.x + 10, player.y + 10, 22, 18);
+    // Eye
+    ctx.fillStyle = '#111';
+    ctx.fillRect(player.x + (player.facing > 0 ? 28 : 12), player.y + 16, 4, 4);
+    // Hat
+    ctx.fillStyle = '#e74c3c';
+    ctx.fillRect(player.x + 6, player.y + 6, 30, 8);
+  }
 
-            // Check goal
-            if (checkCollision(player, goal)) {
-                victory();
-            }
+  function drawEnemies() {
+    enemies.forEach(e => {
+      if (!e.alive) return;
+      ctx.fillStyle = '#8e44ad';
+      ctx.fillRect(e.x, e.y, e.w, e.h);
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(e.x + 8, e.y + 10, 8, 6);
+      ctx.fillRect(e.x + e.w - 16, e.y + 10, 8, 6);
+    });
+  }
 
-            // Update camera
-            camera.x = player.x - canvas.width / 3;
-            camera.x = Math.max(0, camera.x);
-            camera.x = Math.min(camera.x, 2800 - canvas.width);
+  function drawCoins(dt) {
+    coins.forEach(c => {
+      if (c.taken) return;
+      c.hover += dt * 0.006; // subtle bobbing
+      const bob = Math.sin(c.hover) * 3;
+      ctx.save();
+      ctx.translate(0, bob);
+      // coin
+      ctx.fillStyle = '#f1c40f';
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#d4ac0d';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, c.r - 4, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    });
+  }
+
+  function drawFlag() {
+    // Pole
+    ctx.fillStyle = '#c0c6d8';
+    ctx.fillRect(flag.x, canvas.height - TILE*3, 6, TILE*3);
+    // Base
+    ctx.fillStyle = '#8892a6';
+    ctx.fillRect(flag.x - 8, canvas.height - TILE, 22, 8);
+    // Flag
+    ctx.fillStyle = '#2ecc71';
+    ctx.beginPath();
+    ctx.moveTo(flag.x + 6, canvas.height - TILE*3 + 16);
+    ctx.lineTo(flag.x + 6 + 36, canvas.height - TILE*3 + 26);
+    ctx.lineTo(flag.x + 6, canvas.height - TILE*3 + 36);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // Physics and game logic
+  let lastTime = performance.now();
+
+  function step(now) {
+    const dt = Math.min(32, now - lastTime); // ms cap to avoid huge step
+    lastTime = now;
+    const dtSec = dt / 1000;
+
+    handleInput(dtSec);
+    physics(dtSec);
+    updateCamera(dtSec);
+    checkCollisions(dtSec);
+
+    // Render
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.translate(-camera.x, -camera.y);
+    drawBackground(camera.x);
+    drawPlatforms();
+    drawCoins(dt);
+    drawEnemies();
+    drawFlag();
+    drawPlayer();
+    ctx.restore();
+
+    requestAnimationFrame(step);
+  }
+
+  function handleInput(dt) {
+    if (!player.alive) return;
+    const left = keys.has('ArrowLeft') || keys.has('KeyA');
+    const right = keys.has('ArrowRight') || keys.has('KeyD');
+
+    player.facing = right ? 1 : (left ? -1 : player.facing);
+
+    if (left && !right) {
+      player.vx -= WORLD.accel * dt;
+    } else if (right && !left) {
+      player.vx += WORLD.accel * dt;
+    } else {
+      // friction
+      player.vx *= player.onGround ? WORLD.groundFriction : WORLD.airFriction;
+      if (Math.abs(player.vx) < 0.001) player.vx = 0;
+    }
+
+    player.vx = Math.max(-WORLD.maxRunSpeed, Math.min(WORLD.maxRunSpeed, player.vx));
+  }
+
+  let jumpStartTime = null;
+  function tryJump() {
+    if (player.onGround && player.alive) {
+      player.vy = -WORLD.jumpVel;
+      player.onGround = false;
+      jumpHeld = true;
+      jumpStartTime = performance.now();
+    }
+  }
+  function releaseJump() {
+    jumpHeld = false;
+  }
+
+  function physics(dt) {
+    // Variable jump height: cut gravity slightly while jump key is held early
+    const isJumpBoost =
+      jumpHeld && jumpStartTime && (performance.now() - jumpStartTime) < WORLD.maxJumpHoldMs;
+
+    const gravity = isJumpBoost ? WORLD.gravity * 0.7 : WORLD.gravity;
+
+    player.vy += gravity * dt;
+
+    player.x += player.vx * dt;
+    player.y += player.vy * dt;
+
+    // World bounds horizontally
+    player.x = Math.max(0, Math.min(WORLD.width - player.w, player.x));
+
+    // Death: fall off screen
+    if (player.y > canvas.height + 300) {
+      player.alive = false;
+      setStatus('You fell. Press R to retry.');
+    }
+  }
+
+  function checkCollisions(dt) {
+    // Platform collisions (AABB)
+    player.onGround = false;
+    platforms.forEach(p => {
+      const a = { x: player.x, y: player.y, w: player.w, h: player.h };
+      const b = p;
+      if (!rectsOverlap(a, b)) return;
+
+      const prevY = player.y - player.vy * dt;
+      const prevX = player.x - player.vx * dt;
+
+      const overlapBottom = prevY + player.h <= b.y && player.y + player.h > b.y;
+      const overlapTop = prevY >= b.y + b.h && player.y < b.y + b.h;
+      const overlapLeft = prevX + player.w <= b.x && player.x + player.w > b.x;
+      const overlapRight = prevX >= b.x + b.w && player.x < b.x + b.w;
+
+      if (overlapBottom) {
+        // Land on top
+        player.y = b.y - player.h;
+        player.vy = 0;
+        player.onGround = true;
+        jumpStartTime = null;
+      } else if (overlapTop) {
+        // Hit from below
+        player.y = b.y + b.h;
+        player.vy = 0;
+      } else if (overlapLeft) {
+        player.x = b.x - player.w;
+        player.vx = Math.min(player.vx, 0);
+      } else if (overlapRight) {
+        player.x = b.x + b.w;
+        player.vx = Math.max(player.vx, 0);
+      }
+    });
+
+    // Coins pickup
+    coins.forEach(c => {
+      if (c.taken) return;
+      const px = player.x + player.w/2;
+      const py = player.y + player.h/2;
+      const dx = px - c.x;
+      const dy = py - c.y;
+      const dist2 = dx*dx + dy*dy;
+      if (dist2 < (player.w*0.5 + c.r) * (player.w*0.5 + c.r)) {
+        c.taken = true;
+        player.coins++;
+        updateHud();
+      }
+    });
+
+    // Enemy collisions and movement
+    enemies.forEach(e => {
+      if (!e.alive) return;
+
+      // Patrol motion
+      e.x += e.dir * e.speed * dt;
+      if (e.x > e.baseX + e.range) { e.x = e.baseX + e.range; e.dir = -1; }
+      if (e.x < e.baseX - e.range) { e.x = e.baseX - e.range; e.dir = 1; }
+
+      // Check collision with player
+      if (rectsOverlap({x: player.x, y: player.y, w: player.w, h: player.h}, e)) {
+        // If player is falling onto enemy: stomp
+        const falling = player.vy > 120;
+        const above = player.y + player.h <= e.y + e.h * 0.4;
+        if (falling && above) {
+          e.alive = false;
+          player.vy = -WORLD.jumpVel * 0.6;
+        } else {
+          // Hurt player
+          player.alive = false;
+          setStatus('Ouch! Press R to retry.');
         }
+      }
+    });
 
-        function draw() {
-            // Clear canvas
-            ctx.fillStyle = '#5c94fc';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Flag reach
+    const flagRect = { x: flag.x, y: canvas.height - TILE*3, w: flag.w, h: TILE*3 };
+    if (rectsOverlap({x: player.x, y: player.y, w: player.w, h: player.h}, flagRect) && player.alive) {
+      const allCoins = coins.every(c => c.taken);
+      setStatus(allCoins ? 'Perfect! All coins collected!' : 'You made it! (Try for all coins)');
+      player.alive = false;
+    }
+  }
 
-            // Draw clouds
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
-            for (let i = 0; i < 5; i++) {
-                let cloudX = (i * 600 + Date.now() * 0.01) % (3000) - camera.x;
-                ctx.beginPath();
-                ctx.arc(cloudX, 100 + i * 30, 30, 0, Math.PI * 2);
-                ctx.arc(cloudX + 25, 100 + i * 30, 35, 0, Math.PI * 2);
-                ctx.arc(cloudX + 50, 100 + i * 30, 30, 0, Math.PI * 2);
-                ctx.fill();
-            }
+  function updateCamera(dt) {
+    const targetX = Math.max(0, Math.min(WORLD.width - canvas.width, player.x + player.w/2 - canvas.width/2));
+    camera.x += (targetX - camera.x) * camera.lerp;
+    camera.y = 0;
+  }
 
-            // Draw platforms
-            platforms.forEach(platform => {
-                ctx.fillStyle = platform.color;
-                ctx.fillRect(
-                    platform.x - camera.x,
-                    platform.y,
-                    platform.width,
-                    platform.height
-                );
-                
-                // Add texture
-                ctx.fillStyle = 'rgba(0, 0, 0, 0.1)';
-                for (let i = 0; i < platform.width; i += 20) {
-                    ctx.fillRect(
-                        platform.x - camera.x + i,
-                        platform.y,
-                        2,
-                        platform.height
-                    );
-                }
-            });
+  // HUD
+  const coinsEl = document.getElementById('coins');
+  const statusEl = document.getElementById('status');
+  function updateHud() {
+    coinsEl.textContent = `Coins: ${player.coins}`;
+  }
+  function setStatus(text) {
+    statusEl.textContent = text;
+  }
 
-            // Draw coins
-            coins.forEach(coin => {
-                if (!coin.collected) {
-                    ctx.fillStyle = '#FFD700';
-                    ctx.beginPath();
-                    ctx.arc(
-                        coin.x - camera.x + coin.width / 2,
-                        coin.y + coin.height / 2,
-                        coin.width / 2,
-                        0,
-                        Math.PI * 2
-                    );
-                    ctx.fill();
-                    
-                    // Shine effect
-                    ctx.fillStyle = '#FFF8DC';
-                    ctx.beginPath();
-                    ctx.arc(
-                        coin.x - camera.x + coin.width / 2 - 3,
-                        coin.y + coin.height / 2 - 3,
-                        3,
-                        0,
-                        Math.PI * 2
-                    );
-                    ctx.fill();
-                }
-            });
+  // Input handlers
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'Space'].includes(e.code)) e.preventDefault();
+    keys.add(e.code);
+    if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) tryJump();
+    if (e.code === 'KeyR') resetGame();
+  });
+  window.addEventListener('keyup', (e) => {
+    keys.delete(e.code);
+    if (['Space', 'ArrowUp', 'KeyW'].includes(e.code)) releaseJump();
+  });
 
-            // Draw enemies
-            enemies.forEach(enemy => {
-                if (enemy.x > -100) {
-                    ctx.fillStyle = '#8B0000';
-                    ctx.fillRect(
-                        enemy.x - camera.x,
-                        enemy.y,
-                        enemy.width,
-                        enemy.height
-                    );
-                    
-                    // Eyes
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(enemy.x - camera.x + 5, enemy.y + 8, 8, 8);
-                    ctx.fillRect(enemy.x - camera.x + 17, enemy.y + 8, 8, 8);
-                    ctx.fillStyle = 'black';
-                    ctx.fillRect(enemy.x - camera.x + 8, enemy.y + 11, 3, 3);
-                    ctx.fillRect(enemy.x - camera.x + 20, enemy.y + 11, 3, 3);
-                }
-            });
-
-            // Draw goal flag
-            ctx.fillStyle = '#000';
-            ctx.fillRect(goal.x - camera.x, goal.y, 5, goal.height);
-            ctx.fillStyle = '#FFD700';
-            ctx.beginPath();
-            ctx.moveTo(goal.x - camera.x + 5, goal.y);
-            ctx.lineTo(goal.x - camera.x + 45, goal.y + 15);
-            ctx.lineTo(goal.x - camera.x + 5, goal.y + 30);
-            ctx.fill();
-
-            // Draw player
-            ctx.fillStyle = player.color;
-            ctx.fillRect(
-                player.x - camera.x,
-                player.y,
-                player.width,
-                player.height
-            );
-            
-            // Player face
-            ctx.fillStyle = 'white';
-            ctx.fillRect(player.x - camera.x + 8, player.y + 10, 6, 6);
-            ctx.fillRect(player.x - camera.x + 18, player.y + 10, 6, 6);
-            ctx.fillStyle = 'black';
-            ctx.fillRect(player.x - camera.x + 10, player.y + 12, 2, 2);
-            ctx.fillRect(player.x - camera.x + 20, player.y + 12, 2, 2);
-        }
-
-        function checkCollision(rect1, rect2) {
-            return rect1.x < rect2.x + rect2.width &&
-                   rect1.x + rect1.width > rect2.x &&
-                   rect1.y < rect2.y + rect2.height &&
-                   rect1.y + rect1.height > rect2.y;
-        }
-
-        function updateScore() {
-            document.getElementById('score').textContent = score;
-        }
-
-        function loseLife() {
-            lives--;
-            document.getElementById('lives').textContent = lives;
-            
-            if (lives <= 0) {
-                gameOver();
-            } else {
-                // Reset player position
-                player.x = 100;
-                player.y = 400;
-                player.vx = 0;
-                player.vy = 0;
-                camera.x = 0;
-            }
-        }
-
-        function gameOver() {
-            gameRunning = false;
-            document.getElementById('finalScore').textContent = score;
-            document.getElementById('gameOver').style.display = 'block';
-        }
-
-        function victory() {
-            gameRunning = false;
-            document.getElementById('victoryScore').textContent = score;
-            document.getElementById('victory').style.display = 'block';
-        }
-
-        function resetGame() {
-            gameRunning = true;
-            score = 0;
-            lives = 3;
-            player.x = 100;
-            player.y = 400;
-            player.vx = 0;
-            player.vy = 0;
-            camera.x = 0;
-            
-            // Reset coins
-            coins.forEach(coin => coin.collected = false);
-            
-            // Reset enemies
-            enemies.forEach(enemy => {
-                enemy.x = enemy.startX;
-                enemy.vx = Math.abs(enemy.vx);
-            });
-            
-            updateScore();
-            document.getElementById('lives').textContent = lives;
-            document.getElementById('gameOver').style.display = 'none';
-            document.getElementById('victory').style.display = 'none';
-        }
-
-        function gameLoop() {
-            update();
-            draw();
-            requestAnimationFrame(gameLoop);
-        }
-
-        // Start game
-        gameLoop();
-    </script>
+  // Init
+  resetGame();
+  requestAnimationFrame(step);
+})();
+</script>
 </body>
 </html>
